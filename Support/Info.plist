@@ -6,6 +6,10 @@
 	<string>en</string>
 	<key>CFBundleExecutable</key>
 	<string>There</string>
+	<key>CFBundleIconFile</key>
+	<string>There</string>
+	<key>CFBundleIconName</key>
+	<string>There</string>
 	<key>CFBundleIdentifier</key>
 	<string>nl.vanrossum.there</string>
 	<key>CFBundleDisplayName</key>

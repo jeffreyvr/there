@@ -7,106 +7,31 @@ struct PopoverView: View {
     @Environment(ClockStore.self) private var store
     @State private var picking: ZoneTarget?
     @State private var showsHours = false
-    @State private var copied = false
     @State private var loginError = false
     @State private var opensAtLogin = SMAppService.mainApp.status == .enabled
     @FocusState private var timeFocused: Bool
     @Environment(\.menuItemHidden) private var menuItemHidden
 
-    private let chips = [9, 10, 11, 14, 15, 16]
+    private let largeTime = Font.system(size: 26, weight: .light).monospacedDigit()
 
     var body: some View {
-        Group {
-            if let picking {
-                picker(picking)
-            } else {
-                main
-            }
+        if let picking {
+            picker(picking)
+        } else {
+            main
         }
-        .background(Theme.paper)
     }
 
     private var main: some View {
-        @Bindable var store = store
-
-        return VStack(alignment: .leading, spacing: 16) {
-            TimelineView(.everyMinute) { context in
-                VStack(alignment: .leading, spacing: 12) {
-                    clockRow(
-                        kicker: "You",
-                        tint: Theme.you,
-                        time: MeetingMath.clock(context.date, zone: store.yourZone),
-                        place: placeLine(store.yourCity, zone: store.yourZone, at: context.date),
-                        note: store.followsMac ? "This Mac" : "Pinned",
-                        action: { picking = .you }
-                    )
-                    clockRow(
-                        kicker: "Client",
-                        tint: Theme.client,
-                        time: MeetingMath.clock(context.date, zone: store.theirZone),
-                        place: placeLine(store.theirCity, zone: store.theirZone, at: context.date),
-                        note: nil,
-                        action: { picking = .client }
-                    )
-                    Text(clockHint(at: context.date))
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            hairline
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Check a time")
-                    .font(.system(size: 12, weight: .semibold))
-
-                Picker("Who said it", selection: $store.side) {
-                    Text("Client said").tag(InputSide.theirs)
-                    Text("I said").tag(InputSide.mine)
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-
-                HStack(spacing: 8) {
-                    TextField("15:00", text: $store.timeText)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 16, weight: .medium).monospacedDigit())
-                        .frame(width: 88)
-                        .focused($timeFocused)
-
-                    Spacer(minLength: 8)
-
-                    dayStepper
-                }
-
-                if !store.timeText.trimmingCharacters(in: .whitespaces).isEmpty, spoken == nil {
-                    Text("Use 15:00, 3pm, or 15u30.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.bad)
-                }
-
-                HStack(spacing: 6) {
-                    ForEach(chips, id: \.self) { hour in
-                        chip(hour)
-                    }
-                }
-
-                resultCards
-            }
-
-            hairline
-
-            overlapSection
-
-            hoursSection
-
-            hairline
-
-            footer
+        VStack(alignment: .leading, spacing: 0) {
+            clocks
+            divider
+            converter
+            divider
+            settings
         }
-        .padding(18)
-        .frame(width: 360)
+        .padding(6)
+        .frame(width: 320)
         .onAppear {
             PopoverWindow.makeKey()
             opensAtLogin = SMAppService.mainApp.status == .enabled
@@ -116,119 +41,260 @@ struct PopoverView: View {
         }
     }
 
+    private var divider: some View {
+        Divider()
+            .padding(.horizontal, Theme.inset)
+            .padding(.vertical, 6)
+    }
+
+    // MARK: - Clocks
+
+    private var clocks: some View {
+        TimelineView(.everyMinute) { context in
+            VStack(spacing: 0) {
+                clockRow(
+                    city: store.yourCity.city,
+                    detail: store.followsMac ? nil : "Pinned",
+                    time: MeetingMath.clock(context.date, zone: store.yourZone),
+                    action: { picking = .you }
+                )
+                clockRow(
+                    city: store.theirCity.city,
+                    detail: relativeOffset(at: context.date),
+                    time: MeetingMath.clock(context.date, zone: store.theirZone),
+                    action: { picking = .client }
+                )
+            }
+        }
+    }
+
+    private func clockRow(city: String, detail: String?, time: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(city)
+                        .lineLimit(1)
+                    if let detail {
+                        Text(detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 8)
+                Text(time)
+                    .font(largeTime)
+            }
+        }
+        .buttonStyle(.row)
+        .help("Choose a city")
+    }
+
+    /// Reads like the world clock in the Clock app: "Tomorrow, +3:45".
+    private func relativeOffset(at date: Date) -> String {
+        let minutes = (store.theirZone.secondsFromGMT(for: date) - store.yourZone.secondsFromGMT(for: date)) / 60
+        guard minutes != 0 else { return "Same time" }
+
+        let yourDay = CivilDay.today(in: store.yourZone, now: date)
+        let theirDay = CivilDay.today(in: store.theirZone, now: date)
+        let dayName = if theirDay == yourDay {
+            "Today"
+        } else if theirDay == yourDay.adding(days: 1) {
+            "Tomorrow"
+        } else {
+            "Yesterday"
+        }
+
+        let sign = minutes > 0 ? "+" : "-"
+        return String(format: "%@, %@%d:%02d", dayName, sign, abs(minutes) / 60, abs(minutes) % 60)
+    }
+
+    // MARK: - Converter
+
+    private var converter: some View {
+        @Bindable var store = store
+
+        return VStack(alignment: .leading, spacing: 0) {
+            dayNavigator
+
+            HStack {
+                Button {
+                    store.side = store.side == .theirs ? .mine : .theirs
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(sourceCity)
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .help("Swap which side the time comes from")
+
+                Spacer(minLength: 8)
+
+                TextField("15:00", text: $store.timeText)
+                    .textFieldStyle(.plain)
+                    .multilineTextAlignment(.trailing)
+                    .font(largeTime)
+                    .frame(width: 96)
+                    .padding(.horizontal, 6)
+                    .background(.primary.opacity(0.05), in: .rect(cornerRadius: 6, style: .continuous))
+                    .focused($timeFocused)
+            }
+            .padding(.horizontal, Theme.inset)
+            .padding(.vertical, 3)
+
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(answerCity)
+                    if let answerDay {
+                        Text(answerDay)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 8)
+                Text(answerTime ?? "--:--")
+                    .font(largeTime)
+                    .foregroundStyle(answerTime == nil ? .tertiary : .primary)
+                    .padding(.horizontal, 6)
+            }
+            .padding(.horizontal, Theme.inset)
+            .padding(.vertical, 3)
+
+            if let status {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Theme.tone(status.tone))
+                        .frame(width: 6, height: 6)
+                    Text(status.text)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .font(.callout)
+                .padding(.horizontal, Theme.inset)
+                .padding(.top, 4)
+            }
+
+            sharedHours
+                .padding(.horizontal, Theme.inset)
+                .padding(.top, 14)
+                .padding(.bottom, 4)
+        }
+    }
+
+    private var dayNavigator: some View {
+        let today = CivilDay.today(in: sourceZone)
+
+        return HStack(spacing: 0) {
+            stepButton("chevron.left", help: "Previous day") {
+                store.day = store.day.adding(days: -1)
+            }
+            Text(MeetingMath.civilLabel(store.day))
+                .font(.callout.weight(.medium).monospacedDigit())
+                .frame(minWidth: 80)
+            stepButton("chevron.right", help: "Next day") {
+                store.day = store.day.adding(days: 1)
+            }
+
+            Spacer()
+
+            Button("Today") {
+                store.day = today
+            }
+            .buttonStyle(.borderless)
+            .font(.callout)
+            .opacity(store.day == today ? 0 : 1)
+            .disabled(store.day == today)
+        }
+        .padding(.horizontal, Theme.inset - 6)
+        .padding(.bottom, 4)
+    }
+
+    private func stepButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 22)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
     private var spoken: WallTime? {
         WallTime.parse(store.timeText)
+    }
+
+    private var hasInput: Bool {
+        !store.timeText.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private var sourceZone: TimeZone {
         store.side == .theirs ? store.theirZone : store.yourZone
     }
 
-    private var dayStepper: some View {
-        HStack(spacing: 2) {
-            stepButton("chevron.left", help: "Previous day") {
-                store.day = store.day.adding(days: -1)
-            }
+    private var answerZone: TimeZone {
+        store.side == .theirs ? store.yourZone : store.theirZone
+    }
 
-            Text(MeetingMath.civilLabel(store.day))
-                .font(.system(size: 12, weight: .medium).monospacedDigit())
-                .frame(minWidth: 88)
+    private var sourceCity: String {
+        store.side == .theirs ? store.theirCity.city : store.yourCity.city
+    }
 
-            stepButton("chevron.right", help: "Next day") {
-                store.day = store.day.adding(days: 1)
-            }
+    private var answerCity: String {
+        store.side == .theirs ? store.yourCity.city : store.theirCity.city
+    }
 
-            if store.day != CivilDay.today(in: sourceZone) {
-                Button("Today") {
-                    store.day = CivilDay.today(in: sourceZone)
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.client)
-                .padding(.leading, 4)
-            }
+    private var match: TimeMatch? {
+        spoken.map { MeetingMath.resolve(time: $0, on: store.day, in: sourceZone) }
+    }
+
+    private var answerDate: Date? {
+        switch match {
+        case .one(let date), .ambiguous(let date, _): date
+        case .missing, nil: nil
         }
     }
 
-    @ViewBuilder
-    private var resultCards: some View {
-        if let spoken {
-            switch MeetingMath.resolve(time: spoken, on: store.day, in: sourceZone) {
-            case .missing:
-                Text("That time does not exist. The clock skips it.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.bad)
-            case .one(let date):
-                resultCard(date: date, spoken: spoken, kicker: store.side == .theirs ? "For you" : "For the client")
-            case .ambiguous(let earlier, let later):
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("This hour happens twice.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.mixed)
-                    resultCard(date: earlier, spoken: spoken, kicker: "Earlier")
-                    resultCard(date: later, spoken: spoken, kicker: "Later")
-                }
-            }
+    private var answerTime: String? {
+        answerDate.map { MeetingMath.clock($0, zone: answerZone) }
+    }
+
+    /// Only shown when the answer lands on another day than the one picked.
+    private var answerDay: String? {
+        guard let answerDate, CivilDay.today(in: answerZone, now: answerDate) != store.day else { return nil }
+        return MeetingMath.dayLabel(answerDate, zone: answerZone)
+    }
+
+    private var status: (tone: Verdict.Tone, text: String)? {
+        guard hasInput else { return nil }
+
+        switch match {
+        case nil:
+            return (.bad, "Use 15:00, 3pm, or 15u30.")
+        case .missing:
+            return (.bad, "That time does not exist. The clock skips it.")
+        case .one(let date):
+            return (verdict(at: date).tone, verdict(at: date).sentence)
+        case .ambiguous(let earlier, let later):
+            let second = MeetingMath.clock(later, zone: answerZone)
+            return (.mixed, "This hour happens twice. The second one is \(second). \(verdict(at: earlier).sentence)")
         }
     }
 
-    private func resultCard(date: Date, spoken: WallTime, kicker: String) -> some View {
-        let answerZone = store.side == .theirs ? store.yourZone : store.theirZone
-        let answerCity = store.side == .theirs ? store.yourCity.city : store.theirCity.city
-        let verdict = MeetingMath.verdict(
+    private func verdict(at date: Date) -> Verdict {
+        MeetingMath.verdict(
             you: MeetingMath.side(at: date, zone: store.yourZone, work: store.yourWork),
             them: MeetingMath.side(at: date, zone: store.theirZone, work: store.theirWork)
         )
-        let line = MeetingMath.reply(
-            spoken: spoken,
-            spokenCity: store.side == .theirs ? store.theirCity.city : "my time",
-            instant: date,
-            otherZone: answerZone,
-            otherCity: answerCity,
-            side: store.side,
-            verdict: verdict
-        )
-
-        return HStack(alignment: .top, spacing: 10) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(Theme.tone(verdict.tone))
-                .frame(width: 3)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(kicker.uppercased())
-                    .font(.system(size: 10, weight: .bold))
-                    .tracking(1.0)
-                    .foregroundStyle(Theme.tone(verdict.tone))
-
-                Text(MeetingMath.clock(date, zone: answerZone))
-                    .font(.system(size: 34, weight: .medium).monospacedDigit())
-
-                Text("\(MeetingMath.dayLabel(date, zone: answerZone)) · \(answerCity)")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-
-                Text(verdict.sentence)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.tone(verdict.tone))
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Button(copied ? "Copied" : "Copy") {
-                    copy(line)
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
-                .padding(.top, 4)
-            }
-
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-        .background(Theme.tone(verdict.tone).opacity(0.10))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    private var overlapSection: some View {
+    // MARK: - Shared hours
+
+    private var sharedHours: some View {
         let overlap = MeetingMath.overlap(
             on: store.day,
             yourZone: store.yourZone,
@@ -236,120 +302,159 @@ struct PopoverView: View {
             yourWork: store.yourWork,
             theirWork: store.theirWork
         )
-        let summary = sharedSummary(overlap)
 
-        return VStack(alignment: .leading, spacing: 8) {
-            Text("On \(MeetingMath.civilLabel(store.day))")
-                .font(.system(size: 12, weight: .semibold))
+        return VStack(alignment: .leading, spacing: 6) {
+            TimelineView(.everyMinute) { context in
+                AvailabilityChart(
+                    lanes: [store.yourCity.city, store.theirCity.city],
+                    quarters: overlap.quarters,
+                    nowMinute: nowMinute(at: context.date)
+                )
+            }
 
-            Text(summary.title)
-                .font(.system(size: 13, weight: .medium).monospacedDigit())
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text(summary.detail)
-                .font(.system(size: 12).monospacedDigit())
+            Text(sharedSummary(overlap))
+                .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-
-            OverlapBar(quarters: overlap.quarters)
-                .frame(height: 12)
-
-            hourTicks
-
-            HStack(spacing: 12) {
-                legendSwatch(Theme.you.opacity(0.55), "You")
-                legendSwatch(Theme.client.opacity(0.40), "Client")
-                legendSwatch(Theme.client, "Both")
-            }
-            .font(.system(size: 11))
-            .foregroundStyle(.secondary)
         }
     }
 
-    private var hourTicks: some View {
-        GeometryReader { proxy in
-            ForEach([0, 6, 12, 18, 24], id: \.self) { hour in
-                Text("\(hour)")
-                    .font(.system(size: 9).monospacedDigit())
-                    .foregroundStyle(.tertiary)
-                    .position(
-                        x: min(max(proxy.size.width * CGFloat(hour) / 24, 8), proxy.size.width - 8),
-                        y: 6
-                    )
-            }
-        }
-        .frame(height: 12)
+    private func nowMinute(at date: Date) -> Int? {
+        guard store.day == CivilDay.today(in: store.yourZone, now: date) else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = store.yourZone
+        let parts = calendar.dateComponents([.hour, .minute], from: date)
+        return (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
     }
 
-    private var hoursSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private func sharedSummary(_ overlap: DayOverlap) -> String {
+        guard !overlap.shared.isEmpty else {
+            return "No shared hours on this day."
+        }
+
+        let yours = overlap.shared.map {
+            MeetingMath.rangeLabel(start: $0.start, end: $0.end, zone: store.yourZone, day: store.day)
+        }.joined(separator: ", ")
+
+        let theirs = overlap.shared.map {
+            MeetingMath.rangeLabel(start: $0.start, end: $0.end, zone: store.theirZone, day: store.day)
+        }.joined(separator: ", ")
+
+        return "Both work \(yours), \(theirs) in \(store.theirCity.city)."
+    }
+
+    // MARK: - Settings
+
+    private var settings: some View {
+        VStack(alignment: .leading, spacing: 0) {
             Button {
-                showsHours.toggle()
+                withAnimation(.snappy(duration: 0.2)) {
+                    showsHours.toggle()
+                }
             } label: {
                 HStack(spacing: 6) {
-                    Text("Hours")
+                    Text("Working Hours")
                     Spacer()
-                    Text(hoursSummary)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                    Image(systemName: showsHours ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
+                    if !showsHours {
+                        Text(hoursSummary)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(showsHours ? 90 : 0))
                 }
-                .font(.system(size: 12))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.row)
 
             if showsHours {
-                hourEditor("You", start: store.yourWork.start, end: store.yourWork.end, setStart: store.setYourStart, setEnd: store.setYourEnd)
-                hourEditor("Client", start: store.theirWork.start, end: store.theirWork.end, setStart: store.setClientStart, setEnd: store.setClientEnd)
+                VStack(alignment: .leading, spacing: 6) {
+                    hourEditor(store.yourCity.city, start: store.yourWork.start, end: store.yourWork.end, setStart: store.setYourStart, setEnd: store.setYourEnd)
+                    hourEditor(store.theirCity.city, start: store.theirWork.start, end: store.theirWork.end, setStart: store.setClientStart, setEnd: store.setClientEnd)
+                }
+                .padding(.horizontal, Theme.inset)
+                .padding(.vertical, 4)
             }
+
+            HStack {
+                Text("Open at Login")
+                Spacer()
+                Toggle("Open at Login", isOn: loginBinding)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .labelsHidden()
+            }
+            .padding(.horizontal, Theme.inset)
+            .padding(.vertical, 5)
+
+            if loginError {
+                footnote("macOS did not allow the login item.")
+            }
+
+            if menuItemHidden {
+                footnote("The menu bar item is off screen. Quit Hidden Bar, hold Command, and drag There next to the clock.")
+            }
+
+            Button {
+                NSApp.terminate(nil)
+            } label: {
+                HStack {
+                    Text("Quit There")
+                    Spacer()
+                    Text("⌘Q")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.row)
+            .keyboardShortcut("q")
         }
     }
 
     private var hoursSummary: String {
-        if store.yourWork == store.theirWork {
-            return "You and client \(store.yourWork.label)"
-        }
-        return "You \(store.yourWork.label) · Client \(store.theirWork.label)"
+        store.yourWork == store.theirWork ? store.yourWork.label : "Different"
     }
 
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 12) {
-                Text("There")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-
-                Spacer()
-
-                Toggle("Open at login", isOn: loginBinding)
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .font(.system(size: 11))
-
-                Button("Quit") {
-                    NSApp.terminate(nil)
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .medium))
+    private func hourEditor(
+        _ city: String,
+        start: WallTime,
+        end: WallTime,
+        setStart: @escaping (WallTime) -> Void,
+        setEnd: @escaping (WallTime) -> Void
+    ) -> some View {
+        HStack(spacing: 6) {
+            Text(city)
                 .foregroundStyle(.secondary)
-                .keyboardShortcut("q")
-            }
-
-            if loginError {
-                Text("macOS did not allow the login item.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.bad)
-            }
-
-            if menuItemHidden {
-                Text("The menu item is off screen. Quit Hidden Bar, hold Command, and drag There next to the clock.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            timePicker(start, set: setStart)
+            Text("to")
+                .foregroundStyle(.secondary)
+            timePicker(end, set: setEnd)
         }
+        .environment(\.locale, Locale(identifier: "en_GB"))
+    }
+
+    private func timePicker(_ time: WallTime, set: @escaping (WallTime) -> Void) -> some View {
+        DatePicker(
+            "",
+            selection: Binding(
+                get: { date(from: time) },
+                set: { set(wallTime(from: $0)) }
+            ),
+            displayedComponents: .hourAndMinute
+        )
+        .labelsHidden()
+        .datePickerStyle(.stepperField)
+    }
+
+    private func footnote(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, Theme.inset)
+            .padding(.bottom, 4)
     }
 
     private var loginBinding: Binding<Bool> {
@@ -372,11 +477,7 @@ struct PopoverView: View {
         )
     }
 
-    private var hairline: some View {
-        Rectangle()
-            .fill(Color.primary.opacity(0.08))
-            .frame(height: 1)
-    }
+    // MARK: - City picker
 
     private func picker(_ target: ZoneTarget) -> some View {
         CityPicker(
@@ -399,163 +500,7 @@ struct PopoverView: View {
         )
     }
 
-    private func clockRow(
-        kicker: String,
-        tint: Color,
-        time: String,
-        place: String,
-        note: String?,
-        action: @escaping () -> Void
-    ) -> some View {
-        HStack(alignment: .center, spacing: 12) {
-            Text(time)
-                .font(.system(size: 26, weight: .medium).monospacedDigit())
-                .frame(width: 88, alignment: .leading)
-
-            Button(action: action) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(kicker.uppercased())
-                        .font(.system(size: 10, weight: .bold))
-                        .tracking(1.0)
-                        .foregroundStyle(tint)
-
-                    HStack(spacing: 4) {
-                        Text(place)
-                            .lineLimit(1)
-                        if let note {
-                            Text(note)
-                                .foregroundStyle(.tertiary)
-                        }
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .font(.system(size: 13))
-                    .foregroundStyle(.primary)
-                }
-            }
-            .buttonStyle(.plain)
-
-            Spacer(minLength: 0)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(kicker), \(place), \(time)")
-        .accessibilityAddTraits(.isButton)
-    }
-
-    private func chip(_ hour: Int) -> some View {
-        let label = String(format: "%02d", hour)
-        let selected = spoken?.hour == hour && spoken?.minute == 0
-        return Button {
-            store.timeText = "\(label):00"
-        } label: {
-            Text(label)
-                .font(.system(size: 12, weight: .medium).monospacedDigit())
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 5)
-                .background(selected ? Theme.client.opacity(0.16) : Color.primary.opacity(0.06))
-                .foregroundStyle(selected ? Theme.client : Color.primary)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func stepButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .help(help)
-    }
-
-    private func hourEditor(
-        _ title: String,
-        start: WallTime,
-        end: WallTime,
-        setStart: @escaping (WallTime) -> Void,
-        setEnd: @escaping (WallTime) -> Void
-    ) -> some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.system(size: 12))
-                .frame(width: 48, alignment: .leading)
-            timePicker(start, set: setStart)
-            Text("to")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-            timePicker(end, set: setEnd)
-            Spacer(minLength: 0)
-        }
-        .environment(\.locale, Locale(identifier: "en_GB"))
-    }
-
-    private func timePicker(_ time: WallTime, set: @escaping (WallTime) -> Void) -> some View {
-        DatePicker(
-            "",
-            selection: Binding(
-                get: { date(from: time) },
-                set: { set(wallTime(from: $0)) }
-            ),
-            displayedComponents: .hourAndMinute
-        )
-        .labelsHidden()
-        .datePickerStyle(.field)
-        .frame(width: 86)
-    }
-
-    private func legendSwatch(_ color: Color, _ title: String) -> some View {
-        HStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(color)
-                .frame(width: 10, height: 10)
-            Text(title)
-        }
-    }
-
-    private func clockHint(at date: Date) -> String {
-        if store.yourZone.identifier == store.theirZone.identifier {
-            return "Same time as you. Pin a city under You to preview a trip."
-        }
-        return MeetingMath.difference(
-            yourZone: store.yourZone,
-            theirZone: store.theirZone,
-            theirCity: store.theirCity.city,
-            at: date
-        )
-    }
-
-    private func placeLine(_ choice: ZoneChoice, zone: TimeZone, at date: Date) -> String {
-        "\(choice.city) · \(MeetingMath.zoneAbbreviation(zone, at: date))"
-    }
-
-    private func sharedSummary(_ overlap: DayOverlap) -> (title: String, detail: String) {
-        guard !overlap.shared.isEmpty else {
-            return ("No shared hours.", "Try another day, or widen the working hours.")
-        }
-
-        let yours = overlap.shared.map {
-            MeetingMath.rangeLabel(start: $0.start, end: $0.end, zone: store.yourZone, day: store.day)
-        }.joined(separator: ", ")
-
-        let theirs = overlap.shared.map {
-            MeetingMath.rangeLabel(start: $0.start, end: $0.end, zone: store.theirZone, day: store.day)
-        }.joined(separator: ", ")
-
-        return ("\(yours) your time", "\(theirs) \(store.theirCity.city)")
-    }
-
-    private func copy(_ line: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(line, forType: .string)
-        copied = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
-            copied = false
-        }
-    }
+    // MARK: - Helpers
 
     private func date(from time: WallTime) -> Date {
         var parts = Calendar.current.dateComponents([.year, .month, .day], from: .now)
@@ -570,35 +515,98 @@ struct PopoverView: View {
     }
 }
 
-private struct OverlapBar: View {
+/// One lane per city across your day. Shared hours turn green on both lanes.
+private struct AvailabilityChart: View {
+    var lanes: [String]
     var quarters: [QuarterMark]
+    var nowMinute: Int?
+
+    private let laneHeight: CGFloat = 12
+    private let laneGap: CGFloat = 4
+    private let barHeight: CGFloat = 4
+    private let labelWidth: CGFloat = 70
 
     var body: some View {
-        Canvas { context, size in
-            guard !quarters.isEmpty else { return }
-            let width = size.width / CGFloat(quarters.count)
-            for (index, quarter) in quarters.enumerated() {
-                let rect = CGRect(
-                    x: CGFloat(index) * width,
-                    y: 0,
-                    width: width + 0.6,
-                    height: size.height
-                )
-                context.fill(Path(roundedRect: rect, cornerRadius: 0), with: .color(fill(quarter)))
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .top, spacing: 0) {
+                VStack(alignment: .leading, spacing: laneGap) {
+                    ForEach(lanes, id: \.self) { lane in
+                        Text(lane)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .frame(height: laneHeight)
+                    }
+                }
+                .frame(width: labelWidth, alignment: .leading)
+
+                Canvas { context, size in
+                    draw(in: &context, size: size)
+                }
+                .frame(height: laneHeight * 2 + laneGap)
             }
+
+            hourTicks
+                .padding(.leading, labelWidth)
         }
-        .background(Theme.track)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
-        .accessibilityLabel("Shared working hours across your day")
+        .accessibilityElement()
+        .accessibilityLabel("Working hours across your day. Shared hours are green.")
     }
 
-    private func fill(_ quarter: QuarterMark) -> Color {
-        switch (quarter.you, quarter.them) {
-        case (true, true): Theme.client
-        case (true, false): Theme.you.opacity(0.55)
-        case (false, true): Theme.client.opacity(0.40)
-        case (false, false): Theme.track
+    private func draw(in context: inout GraphicsContext, size: CGSize) {
+        guard !quarters.isEmpty else { return }
+        let step = size.width / CGFloat(quarters.count)
+        let laneMatches: [(QuarterMark) -> Bool] = [{ $0.you }, { $0.them }]
+
+        for (index, matches) in laneMatches.enumerated() {
+            let y = CGFloat(index) * (laneHeight + laneGap) + (laneHeight - barHeight) / 2
+
+            func bar(_ run: Range<Int>, _ color: Color) {
+                let rect = CGRect(x: CGFloat(run.lowerBound) * step, y: y, width: CGFloat(run.count) * step, height: barHeight)
+                context.fill(Path(roundedRect: rect, cornerRadius: barHeight / 2), with: .color(color))
+            }
+
+            bar(0..<quarters.count, .primary.opacity(0.07))
+            runs(where: matches).forEach { bar($0, .primary.opacity(0.28)) }
+            runs(where: { $0.you && $0.them }).forEach { bar($0, .green) }
         }
+
+        if let nowMinute {
+            let x = size.width * CGFloat(nowMinute) / (24 * 60)
+            context.fill(Path(CGRect(x: x - 0.5, y: 0, width: 1, height: size.height)), with: .color(.red))
+        }
+    }
+
+    private func runs(where matches: (QuarterMark) -> Bool) -> [Range<Int>] {
+        var runs: [Range<Int>] = []
+        var start: Int?
+        for (index, quarter) in quarters.enumerated() {
+            if matches(quarter) {
+                if start == nil { start = index }
+            } else if let runStart = start {
+                runs.append(runStart..<index)
+                start = nil
+            }
+        }
+        if let start {
+            runs.append(start..<quarters.count)
+        }
+        return runs
+    }
+
+    private var hourTicks: some View {
+        GeometryReader { proxy in
+            ForEach([0, 6, 12, 18, 24], id: \.self) { hour in
+                Text(String(format: "%02d", hour))
+                    .font(.system(size: 9).monospacedDigit())
+                    .foregroundStyle(.tertiary)
+                    .position(
+                        x: min(max(proxy.size.width * CGFloat(hour) / 24, 6), proxy.size.width - 6),
+                        y: 5
+                    )
+            }
+        }
+        .frame(height: 10)
     }
 }
 

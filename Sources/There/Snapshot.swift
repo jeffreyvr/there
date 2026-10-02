@@ -30,6 +30,7 @@ enum Snapshot {
     private static func render(store: ClockStore, appearance: NSAppearance) -> NSImage {
         let root = PopoverView()
             .environment(store)
+            .background(Color(nsColor: .windowBackgroundColor))
         let host = NSHostingView(rootView: root)
         host.appearance = appearance
         host.frame = CGRect(x: 0, y: 0, width: 360, height: 900)
@@ -46,7 +47,7 @@ enum Snapshot {
         host.layoutSubtreeIfNeeded()
 
         let height = min(max(host.fittingSize.height, 280), 900)
-        let size = CGSize(width: 360, height: height)
+        let size = CGSize(width: host.fittingSize.width, height: height)
         host.frame.size = size
         window.setContentSize(size)
         window.layoutIfNeeded()

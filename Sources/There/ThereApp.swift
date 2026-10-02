@@ -176,8 +176,7 @@ enum PreviewWindow {
         window.contentView = host
         window.layoutIfNeeded()
         host.layoutSubtreeIfNeeded()
-        let height = min(max(host.fittingSize.height, 520), 900)
-        window.setContentSize(NSSize(width: 360, height: height))
+        window.setContentSize(NSSize(width: host.fittingSize.width, height: min(host.fittingSize.height, 900)))
         window.center()
         window.makeKeyAndOrderFront(nil)
         retained = window

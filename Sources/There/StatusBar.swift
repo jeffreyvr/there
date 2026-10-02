@@ -18,9 +18,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         super.init()
 
         let button = item.button
-        button?.font = .systemFont(ofSize: 13, weight: .semibold)
-        button?.title = " There"
-        button?.image = nil
+        button?.image = NSImage(systemSymbolName: "globe", accessibilityDescription: "There")
         button?.toolTip = "There"
         button?.target = self
         button?.action = #selector(toggle)
@@ -75,8 +73,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private func showPopover() {
         guard let button = item.button else { return }
         host.view.layoutSubtreeIfNeeded()
-        let height = min(max(host.view.fittingSize.height, 480), 900)
-        popover.contentSize = NSSize(width: 360, height: height)
+        let size = host.view.fittingSize
+        popover.contentSize = NSSize(width: size.width, height: min(size.height, 900))
         button.highlight(true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }

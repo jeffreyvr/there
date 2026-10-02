@@ -7,8 +7,8 @@ enum ZoneTarget {
 
     var title: String {
         switch self {
-        case .you: "You"
-        case .client: "Client"
+        case .you: "Your City"
+        case .client: "Client City"
         }
     }
 }
@@ -22,103 +22,133 @@ struct CityPicker: View {
     var onClose: () -> Void
 
     @State private var query = ""
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 6) {
-                Button(action: onClose) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(target.title)
-                        .font(.system(size: 13, weight: .semibold))
-                }
-                .buttonStyle(.plain)
-                Spacer()
-            }
-
-            TextField("Search cities", text: $query)
-                .textFieldStyle(.roundedBorder)
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            searchField
 
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    if target == .you, query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        macRow
-                    }
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if isBrowsing {
+                        if target == .you {
+                            macRow
+                            Divider()
+                                .padding(.horizontal, Theme.inset)
+                                .padding(.vertical, 4)
+                        }
 
-                    if query.isEmpty {
-                        Text("Places you use. Search for any city.")
-                            .font(.system(size: 11))
+                        Text("Places You Use")
+                            .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.secondary)
-                            .padding(.horizontal, 8)
-                            .padding(.top, 4)
-                            .padding(.bottom, 6)
+                            .padding(.horizontal, Theme.inset)
+                            .padding(.vertical, 4)
                     }
 
                     ForEach(Cities.search(query)) { zone in
                         Button {
                             onPick(zone.identifier)
                         } label: {
-                            zoneRow(zone)
+                            row(title: zone.city, subtitle: subtitle(zone), selected: isSelected(zone))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.row)
                     }
                 }
             }
-            .frame(height: 340)
+            .frame(height: 360)
         }
-        .padding(18)
-        .frame(width: 360)
-        .background(Theme.paper)
+        .padding(6)
+        .frame(width: 320)
+        .onAppear {
+            searchFocused = true
+        }
+        .onExitCommand(perform: onClose)
+    }
+
+    private var isBrowsing: Bool {
+        query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var header: some View {
+        HStack(spacing: 6) {
+            Button(action: onClose) {
+                Image(systemName: "chevron.left")
+                    .font(.body.weight(.semibold))
+                    .frame(width: 24, height: 24)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.borderless)
+            .help("Back")
+
+            Text(target.title)
+                .font(.headline)
+
+            Spacer()
+        }
+        .padding(.horizontal, 4)
+        .padding(.top, 4)
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField("Search", text: $query)
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear")
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.primary.opacity(0.05), in: .capsule)
+        .padding(.horizontal, 4)
     }
 
     private var macRow: some View {
         Button(action: onUseMac) {
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("This Mac")
-                        .font(.system(size: 13, weight: followsMac ? .semibold : .regular))
-                    Text(Cities.choice(for: TimeZone.current.identifier).city)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if followsMac {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.you)
-                }
+            HStack(spacing: 10) {
+                Image(systemName: "laptopcomputer")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20)
+                row(
+                    title: "This Mac",
+                    subtitle: Cities.choice(for: TimeZone.current.identifier).city,
+                    selected: followsMac
+                )
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(followsMac ? Theme.you.opacity(0.10) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.row)
     }
 
-    private func zoneRow(_ zone: ZoneChoice) -> some View {
-        let selected = zone.identifier == currentID && (target == .client || !followsMac)
-        return HStack(spacing: 8) {
+    private func row(title: String, subtitle: String, selected: Bool) -> some View {
+        HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 1) {
-                Text(zone.city)
-                    .font(.system(size: 13, weight: selected ? .semibold : .regular))
-                Text(subtitle(zone))
-                    .font(.system(size: 11))
+                Text(title)
+                Text(subtitle)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
             Spacer()
             if selected {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(target == .you ? Theme.you : Theme.client)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.tint)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(selected ? (target == .you ? Theme.you : Theme.client).opacity(0.10) : Color.clear)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func isSelected(_ zone: ZoneChoice) -> Bool {
+        zone.identifier == currentID && (target == .client || !followsMac)
     }
 
     private func subtitle(_ zone: ZoneChoice) -> String {

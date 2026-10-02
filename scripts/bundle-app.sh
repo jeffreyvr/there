@@ -3,13 +3,20 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-swift build -c release
+# Releases ship one binary for Apple silicon and Intel. Local builds stay native and fast.
+if [[ -n "${UNIVERSAL:-}" ]]; then
+    swift build -c release --arch arm64 --arch x86_64
+    binary=".build/apple/Products/Release/There"
+else
+    swift build -c release
+    binary=".build/release/There"
+fi
 
 app="dist/There.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 
-cp .build/release/There "$app/Contents/MacOS/There"
+cp "$binary" "$app/Contents/MacOS/There"
 cp Support/Info.plist "$app/Contents/Info.plist"
 chmod +x "$app/Contents/MacOS/There"
 

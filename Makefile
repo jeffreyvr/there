@@ -1,4 +1,4 @@
-.PHONY: test app open
+.PHONY: test app open release
 
 test:
 	swift test
@@ -9,3 +9,6 @@ app:
 open: app
 	-killall There
 	open dist/There.app
+
+release:
+	zsh ./scripts/release.sh

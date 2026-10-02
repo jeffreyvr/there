@@ -296,3 +296,27 @@ struct ClockStoreTests {
         defaults.removePersistentDomain(forName: "ThereTests.hours")
     }
 }
+
+struct StatusItemPlacementTests {
+    private let laptop = CGRect(x: 0, y: 0, width: 1728, height: 1117)
+
+    @Test func itemInTheVisibleMenuBarIsReachable() {
+        let item = CGRect(x: 1472, y: 1093, width: 63, height: 24)
+        #expect(StatusItemPlacement.isReachable(itemFrame: item, screenFrames: [laptop]))
+    }
+
+    @Test func itemAboveAnAutoHiddenMenuBarIsReachable() {
+        let item = CGRect(x: 1472, y: 1121, width: 63, height: 24)
+        #expect(StatusItemPlacement.isReachable(itemFrame: item, screenFrames: [laptop]))
+    }
+
+    @Test func itemParkedByHiddenBarIsNotReachable() {
+        let item = CGRect(x: -4129, y: 1121, width: 63, height: 24)
+        #expect(!StatusItemPlacement.isReachable(itemFrame: item, screenFrames: [laptop]))
+    }
+
+    @Test func itemWithoutWidthIsNotReachable() {
+        let item = CGRect(x: 1472, y: 1093, width: 0, height: 24)
+        #expect(!StatusItemPlacement.isReachable(itemFrame: item, screenFrames: [laptop]))
+    }
+}

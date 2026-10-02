@@ -32,10 +32,9 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         popover.delegate = self
     }
 
-    /// Hidden Bar parks new items past the left edge. A frame outside every screen means the user cannot see it.
     var isOnScreen: Bool {
-        guard let frame = item.button?.window?.frame, frame.width > 1 else { return false }
-        return NSScreen.screens.contains { $0.frame.intersects(frame) }
+        guard let frame = item.button?.window?.frame else { return false }
+        return StatusItemPlacement.isReachable(itemFrame: frame, screenFrames: NSScreen.screens.map(\.frame))
     }
 
     /// Calls `show` once the status item has settled off screen. Items often appear, then Hidden Bar moves them.

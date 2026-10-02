@@ -39,3 +39,7 @@ NOTARY_PROFILE=<your notarytool profile> make release
 ```
 
 To use a specific certificate, set `SIGNING_IDENTITY`. The default is `Developer ID Application`.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
